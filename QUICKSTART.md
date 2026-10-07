@@ -348,6 +348,3 @@ The application automatically creates these tables:
 - Security: Never expose JWT_SECRET in `.env.local` or version control
 
 Happy expense tracking! 🎉
-
-test commit
-<!-- test commit -->
