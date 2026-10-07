@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/P0/ddl/001-create-users-table.sql
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/P0/ddl/002-create-groups-table.sql
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/P0/ddl/003-create-group-members-table.sql
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/P0/ddl/004-create-expenses-table.sql
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/P0/ddl/005-create-expense-participants-table.sql
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/P0/ddl/006-create-expense-splits-table.sql
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/P0/ddl/007-create-settlements-table.sql
+      relativeToChangelogFile: false
+#   - include:
+#       file: db/changelog/P0/dml/001-seed-users.sql
+#       relativeToChangelogFile: false
