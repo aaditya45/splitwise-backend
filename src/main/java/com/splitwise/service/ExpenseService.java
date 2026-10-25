@@ -33,13 +33,13 @@ public class ExpenseService {
     private final SettlementService settlementService;
     
     public Expense createExpense(CreateExpenseRequest request, Long paidByUserId) {
-        Group group = groupService.getGroupById(request.getGroupId());
+        Group group = groupService.getGroupById(request.groupId());
         User paidBy = userRepository.findById(paidByUserId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
         // Validate all participants exist
         Set<User> participants = new HashSet<>();
-        for (Long participantId : request.getParticipantIds()) {
+        for (Long participantId : request.participantIds()) {
             User participant = userRepository.findById(participantId)
                     .orElseThrow(() -> new RuntimeException("Participant not found with id: " + participantId));
             participants.add(participant);
@@ -48,8 +48,8 @@ public class ExpenseService {
         Expense expense = new Expense();
         expense.setGroup(group);
         expense.setPaidBy(paidBy);
-        expense.setAmount(request.getAmount());
-        expense.setDescription(request.getDescription());
+        expense.setAmount(request.amount());
+        expense.setDescription(request.description());
         expense.setExpenseDate(LocalDateTime.now());
         expense.setParticipants(participants);
         
@@ -57,15 +57,15 @@ public class ExpenseService {
         Expense savedExpense = expenseRepository.save(expense);
         
         // Calculate and create splits
-        String splitType = request.getSplitType() != null ? request.getSplitType() : "EQUAL";
-        Map<User, BigDecimal> splits = splitCalculatorService.equalSplit(request.getAmount(), participants);
+        String splitType = request.splitType() != null ? request.splitType() : "EQUAL";
+        Map<User, BigDecimal> splits = splitCalculatorService.equalSplit(request.amount(), participants);
         Set<ExpenseSplit> expenseSplits = splitCalculatorService.createSplits(savedExpense, splits, splitType);
         
         expenseSplitRepository.saveAll(expenseSplits);
         savedExpense.setSplits(expenseSplits);
         
         // RELOAD group with fresh data from DB (includes all expenses)
-        Group refreshedGroup = groupService.getGroupById(request.getGroupId());
+        Group refreshedGroup = groupService.getGroupById(request.groupId());
         
         // Recalculate settlements
         settlementService.generateSettlements(refreshedGroup);

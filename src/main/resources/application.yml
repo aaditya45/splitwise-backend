@@ -27,6 +27,11 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
+notification:
+  enabled: ${NOTIFICATION_ENABLED:true}
+  base-url: ${NOTIFICATION_BASE_URL:http://localhost:8090}
+  internal-api-key: ${NOTIFICATION_INTERNAL_API_KEY:dev-internal-key-change-me-in-future}
+
 server:
   port: ${APP_PORT:8080}
   error:

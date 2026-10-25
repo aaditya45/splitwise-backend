@@ -27,16 +27,16 @@ public class GroupService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
         Group group = new Group();
-        group.setName(request.getName());
-        group.setDescription(request.getDescription());
-        group.setGroupImage(request.getGroupImage());
+        group.setName(request.name());
+        group.setDescription(request.description());
+        group.setGroupImage(request.groupImage());
         group.setCreatedBy(createdBy);
         
         Set<User> members = new HashSet<>();
         members.add(createdBy);
         
-        if (request.getMemberIds() != null && !request.getMemberIds().isEmpty()) {
-            for (Long memberId : request.getMemberIds()) {
+        if (request.memberIds() != null && !request.memberIds().isEmpty()) {
+            for (Long memberId : request.memberIds()) {
                 User member = userRepository.findById(memberId)
                         .orElseThrow(() -> new RuntimeException("User not found with id: " + memberId));
                 members.add(member);
