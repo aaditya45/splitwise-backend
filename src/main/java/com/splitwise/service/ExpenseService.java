@@ -13,7 +13,8 @@ import com.splitwise.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.splitwise.event.ExpenseCreatedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -31,6 +32,8 @@ public class ExpenseService {
     private final UserService userService;
     private final SplitCalculatorService splitCalculatorService;
     private final SettlementService settlementService;
+    private final ApplicationEventPublisher eventPublisher;
+
     
     public Expense createExpense(CreateExpenseRequest request, Long paidByUserId) {
         Group group = groupService.getGroupById(request.groupId());
@@ -69,8 +72,27 @@ public class ExpenseService {
         
         // Recalculate settlements
         settlementService.generateSettlements(refreshedGroup);
+
+        publishExpenseCreated(savedExpense, refreshedGroup, paidBy);
         
         return savedExpense;
+    }
+
+    private void publishExpenseCreated(Expense expense, Group group, User actor) {
+        List<ExpenseCreatedEvent.Recipient> recipients = group.getMembers().stream()
+                .map(member -> new ExpenseCreatedEvent.Recipient(
+                        member.getUserId(), member.getEmail(), member.getName()))
+                .toList();
+
+        eventPublisher.publishEvent(new ExpenseCreatedEvent(
+                expense.getExpenseId(),
+                group.getGroupId(),
+                group.getName(),
+                expense.getDescription(),
+                expense.getAmount(),
+                actor.getUserId(),
+                actor.getName(),
+                recipients));
     }
     
     public Expense getExpenseById(Long expenseId) {
