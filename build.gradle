@@ -17,9 +17,7 @@ configurations {
 repositories {
     gradlePluginPortal()
     mavenCentral()
-    maven {
-		url = uri('C:\\Users\\aaditya.sharma\\.m2\\repository')
-	}
+    mavenLocal()
 }
 
 dependencies {
