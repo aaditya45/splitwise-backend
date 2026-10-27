@@ -398,6 +398,7 @@ Response (200 OK):
 ```
 
 ### 3. Get Group Settlement Summary
+Net balance per member (positive = is owed money, negative = owes money). Only group members can call this.
 ```
 GET /settlements/group/{groupId}/summary
 Authorization: Bearer <token>
@@ -407,8 +408,11 @@ Response (200 OK):
   "success": true,
   "message": "Group summary fetched successfully",
   "data": {
-    "message": "Group settlement summary",
-    "groupId": 1
+    "groupId": 1,
+    "balances": [
+      { "user": { "userId": 1, "name": "Alice", ... }, "balance": 150.00 },
+      { "user": { "userId": 2, "name": "Bob", ... }, "balance": -150.00 }
+    ]
   },
   "statusCode": 200
 }
@@ -521,7 +525,10 @@ curl -X POST http://localhost:8080/api/expenses \
 ## Response Status Codes
 - `200 OK` - Request successful
 - `201 Created` - Resource created successfully
-- `400 Bad Request` - Invalid input
-- `401 Unauthorized` - Missing/invalid authentication
+- `400 Bad Request` - Invalid input, malformed JSON, or a broken business rule (e.g. unsupported split type, participant not in the group)
+- `401 Unauthorized` - Missing/invalid token, or wrong login credentials
+- `403 Forbidden` - Authenticated, but not allowed (e.g. not a member of the group, not a party to the settlement)
 - `404 Not Found` - Resource not found
-- `500 Internal Server Error` - Server error
+- `405 Method Not Allowed` - Wrong HTTP method for the endpoint
+- `409 Conflict` - Already exists (e.g. email already registered, user already in group)
+- `500 Internal Server Error` - Unexpected server error (details are only in the server logs)

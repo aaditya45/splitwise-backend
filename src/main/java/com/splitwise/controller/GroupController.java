@@ -10,82 +10,59 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/groups")
 @RequiredArgsConstructor
 public class GroupController {
-    
+
     private final GroupService groupService;
-    
+
     @PostMapping
     public ResponseEntity<ApiResponse<GroupDTO>> createGroup(
             @Valid @RequestBody CreateGroupRequest request,
-            Authentication authentication) {
-        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-        Group group = groupService.createGroup(request, userDetails.getUserId());
-        GroupDTO groupDTO = groupService.convertToDTO(group);
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        Group group = groupService.createGroup(request, currentUser.getUserId());
 
-        ApiResponse<GroupDTO> response = ApiResponse.<GroupDTO>builder()
-                .success(true)
-                .message("Group created successfully")
-                .data(groupDTO)
-                .statusCode(HttpStatus.CREATED.value())
-                .build();
-        
-        return new ResponseEntity<>(response, HttpStatus.CREATED);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.created("Group created successfully", groupService.convertToDTO(group)));
     }
-    
+
     @GetMapping("/{groupId}")
-    public ResponseEntity<ApiResponse<GroupDTO>> getGroup(@PathVariable Long groupId) {
-        Group group = groupService.getGroupById(groupId);
-        GroupDTO groupDTO = groupService.convertToDTO(group);
-        
-        ApiResponse<GroupDTO> response = ApiResponse.<GroupDTO>builder()
-                .success(true)
-                .message("Group fetched successfully")
-                .data(groupDTO)
-                .statusCode(HttpStatus.OK.value())
-                .build();
-        
-        return new ResponseEntity<>(response, HttpStatus.OK);
+    public ResponseEntity<ApiResponse<GroupDTO>> getGroup(
+            @PathVariable Long groupId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        Group group = groupService.getGroupForMember(groupId, currentUser.getUserId());
+
+        return ResponseEntity.ok(ApiResponse.ok("Group fetched successfully", groupService.convertToDTO(group)));
     }
-    
+
     @GetMapping("/user/groups")
-    public ResponseEntity<ApiResponse<List<GroupDTO>>> getUserGroups(Authentication authentication) {
-        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-        List<Group> groups = groupService.getUserGroups(userDetails.getUserId());
-        List<GroupDTO> groupDTOs = groups.stream()
+    public ResponseEntity<ApiResponse<List<GroupDTO>>> getUserGroups(
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        List<GroupDTO> groups = groupService.getUserGroups(currentUser.getUserId()).stream()
                 .map(groupService::convertToDTO)
-                .collect(Collectors.toList());
-        
-        ApiResponse<List<GroupDTO>> response = ApiResponse.<List<GroupDTO>>builder()
-                .success(true)
-                .message("User groups fetched successfully")
-                .data(groupDTOs)
-                .statusCode(HttpStatus.OK.value())
-                .build();
-        
-        return new ResponseEntity<>(response, HttpStatus.OK);
+                .toList();
+
+        return ResponseEntity.ok(ApiResponse.ok("User groups fetched successfully", groups));
     }
-    
+
     @PostMapping("/{groupId}/members/{userId}")
     public ResponseEntity<ApiResponse<String>> addMemberToGroup(
             @PathVariable Long groupId,
-            @PathVariable Long userId) {
-        groupService.addMemberToGroup(groupId, userId);
-        
-        ApiResponse<String> response = ApiResponse.<String>builder()
-                .success(true)
-                .message("Member added successfully") 
-                .statusCode(HttpStatus.OK.value())
-                .build();
-        
-        return new ResponseEntity<>(response, HttpStatus.OK);
+            @PathVariable Long userId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        groupService.addMemberToGroup(groupId, userId, currentUser.getUserId());
+
+        return ResponseEntity.ok(ApiResponse.ok("Member added successfully"));
     }
 }

@@ -31,7 +31,7 @@ public class Group {
     @Column(columnDefinition = "TEXT")
     private String description;
     
-    @Column(columnDefinition = "LONGTEXT")
+    @Column(columnDefinition = "TEXT")
     private String groupImage;
     
     @ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)

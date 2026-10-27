@@ -17,9 +17,6 @@ configurations {
 repositories {
     gradlePluginPortal()
     mavenCentral()
-    maven {
-		url = uri('C:\\Users\\aaditya.sharma\\.m2\\repository')
-	}
 }
 
 dependencies {
@@ -31,7 +28,6 @@ dependencies {
     
     // Database
     runtimeOnly 'org.postgresql:postgresql'
-    runtimeOnly 'com.h2database:h2'
     
     // Lombok
     compileOnly 'org.projectlombok:lombok'
@@ -41,10 +37,6 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
-    
-    // MapStruct for DTOs
-    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
-    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
     
     // Environment Variables
     implementation 'io.github.cdimascio:dotenv-java:3.0.0'
@@ -58,7 +50,6 @@ dependencies {
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
-    testImplementation 'junit:junit:4.13.2'
 }
 
 tasks.named('test') {

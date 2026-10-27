@@ -4,6 +4,7 @@ import com.splitwise.dto.request.LoginRequest;
 import com.splitwise.dto.request.RegisterRequest;
 import com.splitwise.dto.response.ApiResponse;
 import com.splitwise.dto.response.AuthResponse;
+import com.splitwise.exception.ResourceNotFoundException;
 import com.splitwise.model.User;
 import com.splitwise.security.JwtTokenProvider;
 import com.splitwise.service.UserService;
@@ -14,88 +15,45 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
-    
+
     private final UserService userService;
     private final JwtTokenProvider jwtTokenProvider;
     private final AuthenticationManager authenticationManager;
-    
+
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(@Valid @RequestBody RegisterRequest request) {
-        try {
-            User user = userService.registerUser(request);
-            String token = jwtTokenProvider.generateTokenFromEmail(user.getEmail());
-            
-            AuthResponse authResponse = new AuthResponse(
-                    token,
-                    "Bearer",
-                    user.getUserId(),
-                    user.getEmail(),
-                    user.getName()
-            );
-            
-            ApiResponse<AuthResponse> response = ApiResponse.<AuthResponse>builder()
-                    .success(true)
-                    .message("User registered successfully")
-                    .data(authResponse)
-                    .statusCode(HttpStatus.CREATED.value())
-                    .build();
-            
-            return new ResponseEntity<>(response, HttpStatus.CREATED);
-        } catch (Exception e) {
-            ApiResponse<AuthResponse> response = ApiResponse.<AuthResponse>builder()
-                    .success(false)
-                    .message(e.getMessage())
-                    .statusCode(HttpStatus.BAD_REQUEST.value())
-                    .build();
-            
-            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
-        }
+        User user = userService.registerUser(request);
+        String token = jwtTokenProvider.generateTokenFromEmail(user.getEmail());
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.created("User registered successfully", toAuthResponse(token, user)));
     }
-    
+
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
-        try {
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            request.email(),
-                            request.password()
-                    )
-            );
-            
-            String token = jwtTokenProvider.generateToken(authentication);
-            User user = userService.findByEmail(request.email())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-            
-            AuthResponse authResponse = new AuthResponse(
-                    token,
-                    "Bearer",
-                    user.getUserId(),
-                    user.getEmail(),
-                    user.getName()
-            );
-            
-            ApiResponse<AuthResponse> response = ApiResponse.<AuthResponse>builder()
-                    .success(true)
-                    .message("Login successful")
-                    .data(authResponse)
-                    .statusCode(HttpStatus.OK.value())
-                    .build();
-            
-            return new ResponseEntity<>(response, HttpStatus.OK);
-        } catch (Exception e) {
-            ApiResponse<AuthResponse> response = ApiResponse.<AuthResponse>builder()
-                    .success(false)
-                    .message("Invalid credentials")
-                    .statusCode(HttpStatus.UNAUTHORIZED.value())
-                    .build();
-            
-            return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
-        }
+        String email = UserService.normalizeEmail(request.LEmail());
+
+        // Wrong credentials throw BadCredentialsException, which the GlobalExceptionHandler maps to 401.
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(email, request.LPassword()));
+
+        String token = jwtTokenProvider.generateToken(authentication);
+        User user = userService.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        return ResponseEntity.ok(ApiResponse.ok("Login successful", toAuthResponse(token, user)));
+    }
+
+    private AuthResponse toAuthResponse(String token, User user) {
+        return new AuthResponse(token, "Bearer", user.getUserId(), user.getEmail(), user.getName());
     }
 }
