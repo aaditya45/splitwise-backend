@@ -39,7 +39,6 @@ public class ExpenseService {
     private final UserService userService;
     private final SplitCalculatorService splitCalculatorService;
     private final SettlementService settlementService;
-    private final ApplicationEventPublisher eventPublisher;
 
     public Expense createExpense(CreateExpenseRequest request, Long paidByUserId) {
         // The payer must belong to the group, and so must everyone the expense is split with.
@@ -97,6 +96,7 @@ public class ExpenseService {
         groupService.assertMember(expense.getGroup().getGroupId(), userId);
         return expense;
     }
+
 
     public List<Expense> getGroupExpenses(Long groupId, Long userId) {
         groupService.assertMember(groupId, userId);
