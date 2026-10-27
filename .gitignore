@@ -2,7 +2,6 @@
 .gradle/
 build/
 gradle-app.setting
-!gradle-wrapper.jar
 .gradletasknamecache
 out/
 
@@ -21,6 +20,8 @@ out/
 target/
 *.class
 *.jar
+# The Gradle wrapper jar must be committed; this has to come after *.jar to take effect
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 *.ear
 *.zip
