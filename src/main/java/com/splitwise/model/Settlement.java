@@ -38,8 +38,9 @@ public class Settlement {
     @Column(nullable = false)
     private BigDecimal amount;
     
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String status; // PENDING, PAID, SETTLED
+    private SettlementStatus status;
     
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -52,7 +53,7 @@ public class Settlement {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
         if (status == null) {
-            status = "PENDING";
+            status = SettlementStatus.PENDING;
         }
     }
     

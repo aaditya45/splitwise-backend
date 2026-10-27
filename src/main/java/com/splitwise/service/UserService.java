@@ -2,6 +2,8 @@ package com.splitwise.service;
 
 import com.splitwise.dto.UserDTO;
 import com.splitwise.dto.request.RegisterRequest;
+import com.splitwise.exception.ConflictException;
+import com.splitwise.exception.ResourceNotFoundException;
 import com.splitwise.model.User;
 import com.splitwise.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -9,43 +11,45 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class UserService {
-    
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    
+
+    public static String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
+    }
+
     public User registerUser(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
-            throw new RuntimeException("Email already registered");
+        String email = normalizeEmail(request.email());
+        if (userRepository.existsByEmail(email)) {
+            throw new ConflictException("Email already registered");
         }
-        
+
         User user = new User();
-        user.setName(request.name());
-        user.setEmail(request.email());
+        user.setName(request.name().trim());
+        user.setEmail(email);
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setPhone(request.phone());
-        
+
         return userRepository.save(user);
     }
-    
+
     public Optional<User> findByEmail(String email) {
-        return userRepository.findByEmail(email);
+        return userRepository.findByEmail(normalizeEmail(email));
     }
-    
-    public Optional<User> findById(Long userId) {
-        return userRepository.findById(userId);
-    }
-    
+
     public User getUserById(Long userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
     }
-    
+
     public UserDTO convertToDTO(User user) {
         return new UserDTO(
                 user.getUserId(),
