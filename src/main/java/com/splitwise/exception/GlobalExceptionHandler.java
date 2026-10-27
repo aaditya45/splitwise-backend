@@ -32,6 +32,28 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
     
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> handleNotFoundException(
+            NotFoundException ex, WebRequest request) {
+        ApiResponse<Object> response = ApiResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .statusCode(HttpStatus.NOT_FOUND.value())
+                .build();
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ApiResponse<Object>> handleForbiddenException(
+            ForbiddenException ex, WebRequest request) {
+        ApiResponse<Object> response = ApiResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .statusCode(HttpStatus.FORBIDDEN.value())
+                .build();
+        return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Map<String, String>>> handleValidationException(
             MethodArgumentNotValidException ex, WebRequest request) {

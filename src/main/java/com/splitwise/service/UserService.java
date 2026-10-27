@@ -28,7 +28,7 @@ public class UserService {
         user.setName(request.name());
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
-        user.setPhone(request.phone());
+        user.setPhone(request.phone() == null || request.phone().isBlank() ? null : request.phone().trim());
         
         return userRepository.save(user);
     }

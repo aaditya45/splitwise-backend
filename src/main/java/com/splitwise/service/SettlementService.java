@@ -1,5 +1,7 @@
 package com.splitwise.service;
 
+import com.splitwise.exception.ForbiddenException;
+import com.splitwise.exception.NotFoundException;
 import com.splitwise.model.Settlement;
 import com.splitwise.model.User;
 import com.splitwise.model.Group;
@@ -49,16 +51,24 @@ public class SettlementService {
             User paidBy = expense.getPaidBy();
             
             // Add the amount paid by user
-            balances.put(paidBy, balances.get(paidBy).add(expense.getAmount()));
-            
+            balances.merge(paidBy, expense.getAmount(), BigDecimal::add);
+
             // Subtract amount owed by each participant
             expense.getSplits().forEach(split -> {
                 User user = split.getUser();
                 log.info("  Split: {} owes {}", user.getName(), split.getAmount());
-                balances.put(user, balances.get(user).subtract(split.getAmount()));
+                balances.merge(user, split.getAmount().negate(), BigDecimal::add);
             });
         }
-        
+
+        // Payments already made move money from debtor to creditor, so they count towards balances
+        settlementRepository.findByGroupGroupId(group.getGroupId()).stream()
+                .filter(s -> "PAID".equals(s.getStatus()))
+                .forEach(s -> {
+                    balances.merge(s.getDebtor(), s.getAmount(), BigDecimal::add);
+                    balances.merge(s.getCreditor(), s.getAmount().negate(), BigDecimal::add);
+                });
+
         return balances;
     }
     
@@ -166,12 +176,30 @@ public class SettlementService {
     }
     
     /**
+     * Get all pending settlements in a group
+     */
+    public List<Settlement> getGroupPendingSettlements(Long groupId) {
+        return settlementRepository.findByGroupGroupId(groupId).stream()
+                .filter(s -> "PENDING".equals(s.getStatus()))
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Mark a settlement as paid
      */
-    public void settlePayment(Long settlementId) {
+    public void settlePayment(Long settlementId, Long userId) {
         Settlement settlement = settlementRepository.findById(settlementId)
-                .orElseThrow(() -> new RuntimeException("Settlement not found"));
-        
+                .orElseThrow(() -> new NotFoundException("Settlement not found"));
+
+        boolean isParty = settlement.getDebtor().getUserId().equals(userId)
+                || settlement.getCreditor().getUserId().equals(userId);
+        if (!isParty) {
+            throw new ForbiddenException("Only the debtor or creditor can settle this payment");
+        }
+        if (!"PENDING".equals(settlement.getStatus())) {
+            throw new RuntimeException("Settlement is already " + settlement.getStatus());
+        }
+
         settlement.setStatus("PAID");
         settlementRepository.save(settlement);
     }
