@@ -1,527 +1,352 @@
-# Splitwise API Documentation
+# API Reference
 
-## Base URL
+Base URL: `http://localhost:8088` (the port is `APP_PORT` in `.env`).
+
+Examples on this page are real responses from the running backend, with emails shortened and tokens replaced by `<jwt>`. For what each endpoint does internally, see [docs/FLOWS.md](docs/FLOWS.md).
+
+## Conventions
+
+**Auth.** Every endpoint except `/api/auth/**` needs:
+
 ```
-http://localhost:8080/api
+Authorization: Bearer <jwt>
 ```
 
-## Authentication
-All endpoints (except `/auth/**`) require Bearer token in Authorization header:
+Missing, malformed or expired tokens get `401`.
+
+**Envelope.** Every response has this shape; fields that are `null` are left out (so a user with no phone has no `phone` key):
+
+```json
+{ "success": true, "message": "…", "data": { }, "statusCode": 200 }
 ```
-Authorization: Bearer <jwt_token>
-```
+
+**Money** is a JSON number with up to 2 decimals. **Dates** are ISO-8601 local date-times without a zone, e.g. `2026-10-28T01:02:04.664683`.
+
+**Status codes**
+
+| Code | Meaning |
+|---|---|
+| 200 / 201 | OK / created |
+| 400 | Validation failed (`data` maps field → message) or a business rule was broken (`message` says which) |
+| 401 | Not logged in, or wrong email/password at login |
+| 403 | Logged in, but not allowed: not a group member, not the payer, not a party to the settlement |
+| 404 | The group, expense, settlement or user doesn't exist |
+| 500 | Unexpected server error |
+
+## Access rules
+
+| Endpoint | Who may call it |
+|---|---|
+| `POST /api/auth/register`, `POST /api/auth/login` | anyone |
+| `GET /api/users/profile`, `GET /api/users/{userId}` | any logged-in user |
+| `POST /api/groups`, `GET /api/groups/user/groups` | any logged-in user |
+| `GET /api/groups/{groupId}` | members of the group |
+| `POST /api/groups/{groupId}/members/{userId}` | members of the group |
+| `POST /api/expenses` | members of the group; every participant must be a member too |
+| `GET /api/expenses/{expenseId}`, `GET /api/expenses/group/{groupId}` | members of the group |
+| `DELETE /api/expenses/{expenseId}` | the payer only |
+| `GET /api/settlements/group/{groupId}/user/pending`, `…/summary` | members of the group |
+| `POST /api/settlements/{settlementId}/pay` | the settlement's debtor or creditor |
+
+## Endpoints
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | [`/api/auth/register`](#post-apiauthregister) | Create an account and get a token |
+| POST | [`/api/auth/login`](#post-apiauthlogin) | Get a token |
+| GET | [`/api/users/profile`](#get-apiusersprofile) | Your own profile |
+| GET | [`/api/users/{userId}`](#get-apiusersuserid) | Look up a user |
+| POST | [`/api/groups`](#post-apigroups) | Create a group |
+| GET | [`/api/groups/user/groups`](#get-apigroupsusergroups) | Groups you belong to |
+| GET | [`/api/groups/{groupId}`](#get-apigroupsgroupid) | One group with members |
+| POST | [`/api/groups/{groupId}/members/{userId}`](#post-apigroupsgroupidmembersuserid) | Add a member |
+| POST | [`/api/expenses`](#post-apiexpenses) | Add an expense |
+| GET | [`/api/expenses/{expenseId}`](#get-apiexpensesexpenseid) | One expense with splits |
+| GET | [`/api/expenses/group/{groupId}`](#get-apiexpensesgroupgroupid) | All expenses in a group |
+| DELETE | [`/api/expenses/{expenseId}`](#delete-apiexpensesexpenseid) | Delete an expense you paid |
+| GET | [`/api/settlements/group/{groupId}/user/pending`](#get-apisettlementsgroupgroupiduserpending) | Your pending settlements in a group |
+| POST | [`/api/settlements/{settlementId}/pay`](#post-apisettlementssettlementidpay) | Mark a settlement paid |
+| GET | [`/api/settlements/group/{groupId}/summary`](#get-apisettlementsgroupgroupidsummary) | Everyone's balances and all pending settlements |
 
 ---
 
-## Authentication Endpoints
+### Auth
 
-### 1. Register User
+#### `POST /api/auth/register`
+
+| Field | Type | Rules |
+|---|---|---|
+| `name` | string | required |
+| `email` | string | required, valid email, unique |
+| `password` | string | required |
+| `phone` | string | optional, max 20 characters |
+
+```bash
+curl -X POST http://localhost:8088/api/auth/register -H 'Content-Type: application/json' -d '{"name":"Alice","email":"alice@example.com","password":"secret123","phone":"9876543210"}'
 ```
-POST /auth/register
-Content-Type: application/json
 
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "securePassword123",
-  "phone": "+91-9876543210"
-}
+`201`
 
-Response (201 Created):
+```json
 {
   "success": true,
   "message": "User registered successfully",
-  "data": {
-    "token": "eyJhbGciOiJIUzUxMiJ9...",
-    "type": "Bearer",
-    "userId": 1,
-    "email": "john@example.com",
-    "name": "John Doe"
-  },
+  "data": { "token": "<jwt>", "type": "Bearer", "userId": 29, "email": "alice@example.com", "name": "Alice" },
   "statusCode": 201
 }
 ```
 
-### 2. Login User
-```
-POST /auth/login
-Content-Type: application/json
+Errors: `400 "Email already registered"`; `400 "Validation failed"`:
 
+```json
 {
-  "email": "john@example.com",
-  "password": "securePassword123"
-}
-
-Response (200 OK):
-{
-  "success": true,
-  "message": "Login successful",
-  "data": {
-    "token": "eyJhbGciOiJIUzUxMiJ9...",
-    "type": "Bearer",
-    "userId": 1,
-    "email": "john@example.com",
-    "name": "John Doe"
-  },
-  "statusCode": 200
+  "success": false,
+  "message": "Validation failed",
+  "data": { "password": "Password is required", "name": "Name is required", "email": "Email should be valid" },
+  "statusCode": 400
 }
 ```
+
+#### `POST /api/auth/login`
+
+Body: `{ "email": "…", "password": "…" }` (both required).
+
+`200`: same `data` as register (`token`, `type`, `userId`, `email`, `name`), with message `"Login successful"`.
+
+Errors: `401 "Invalid credentials"` for a wrong password or unknown email.
 
 ---
 
-## User Endpoints
+### Users
 
-### 1. Get Current User Profile
-```
-GET /users/profile
-Authorization: Bearer <token>
+`UserDTO`: `{ userId, name, email, phone?, profilePicture? }`. The password is never returned.
 
-Response (200 OK):
-{
-  "success": true,
-  "message": "User profile fetched successfully",
-  "data": {
-    "userId": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "phone": "+91-9876543210",
-    "profilePicture": null
-  },
-  "statusCode": 200
-}
-```
+#### `GET /api/users/profile`
 
-### 2. Get User by ID
-```
-GET /users/{userId}
-Authorization: Bearer <token>
+`200`: the caller's `UserDTO`.
 
-Response (200 OK):
-{
-  "success": true,
-  "message": "User fetched successfully",
-  "data": {
-    "userId": 2,
-    "name": "Jane Smith",
-    "email": "jane@example.com",
-    "phone": "+91-9876543211",
-    "profilePicture": null
-  },
-  "statusCode": 200
-}
-```
+#### `GET /api/users/{userId}`
+
+`200`: that user's `UserDTO`. Errors: `404` if unknown.
 
 ---
 
-## Group Endpoints
+### Groups
 
-### 1. Create Group
+`GroupDTO`: `{ groupId, name, description?, groupImage?, createdBy: UserDTO, members: UserDTO[], createdAt, updatedAt }`
+
+#### `POST /api/groups`
+
+| Field | Type | Rules |
+|---|---|---|
+| `name` | string | required |
+| `description` | string | optional |
+| `groupImage` | string | optional (URL) |
+| `memberIds` | number[] | optional; each must be an existing user. The caller is always added |
+
+```bash
+curl -X POST http://localhost:8088/api/groups -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"name":"Goa trip","description":"Dec 2026","memberIds":[30]}'
 ```
-POST /groups
-Authorization: Bearer <token>
-Content-Type: application/json
 
-{
-  "name": "Trip to Goa",
-  "description": "Summer vacation expense group",
-  "groupImage": null,
-  "memberIds": [2, 3, 4]
-}
+`201`
 
-Response (201 Created):
+```json
 {
   "success": true,
   "message": "Group created successfully",
   "data": {
-    "groupId": 1,
-    "name": "Trip to Goa",
-    "description": "Summer vacation expense group",
-    "groupImage": null,
-    "createdBy": {
-      "userId": 1,
-      "name": "John Doe",
-      "email": "john@example.com",
-      "phone": "+91-9876543210",
-      "profilePicture": null
-    },
+    "groupId": 11,
+    "name": "Goa trip",
+    "description": "Dec 2026",
+    "createdBy": { "userId": 29, "name": "Alice", "email": "alice@example.com", "phone": "9876543210" },
     "members": [
-      {
-        "userId": 1,
-        "name": "John Doe",
-        "email": "john@example.com",
-        "phone": "+91-9876543210",
-        "profilePicture": null
-      },
-      {
-        "userId": 2,
-        "name": "Jane Smith",
-        "email": "jane@example.com",
-        "phone": "+91-9876543211",
-        "profilePicture": null
-      }
+      { "userId": 29, "name": "Alice", "email": "alice@example.com", "phone": "9876543210" },
+      { "userId": 30, "name": "Bob", "email": "bob@example.com" }
     ],
-    "createdAt": "2024-01-15T10:30:00",
-    "updatedAt": "2024-01-15T10:30:00"
+    "createdAt": "2026-10-28T01:02:04.655542",
+    "updatedAt": "2026-10-28T01:02:04.655555"
   },
   "statusCode": 201
 }
 ```
 
-### 2. Get Group Details
-```
-GET /groups/{groupId}
-Authorization: Bearer <token>
+Errors: `400` blank name; `400 "User not found with id: …"` for an unknown member.
 
-Response (200 OK):
-{
-  "success": true,
-  "message": "Group fetched successfully",
-  "data": {
-    "groupId": 1,
-    "name": "Trip to Goa",
-    "description": "Summer vacation expense group",
-    "groupImage": null,
-    "createdBy": { ... },
-    "members": [ ... ],
-    "createdAt": "2024-01-15T10:30:00",
-    "updatedAt": "2024-01-15T10:30:00"
-  },
-  "statusCode": 200
-}
-```
+#### `GET /api/groups/user/groups`
 
-### 3. Get User's Groups
-```
-GET /groups/user/groups
-Authorization: Bearer <token>
+`200`: `GroupDTO[]`, every group the caller is a member of.
 
-Response (200 OK):
-{
-  "success": true,
-  "message": "User groups fetched successfully",
-  "data": [
-    {
-      "groupId": 1,
-      "name": "Trip to Goa",
-      ...
-    },
-    {
-      "groupId": 2,
-      "name": "Monthly Groceries",
-      ...
-    }
-  ],
-  "statusCode": 200
-}
-```
+#### `GET /api/groups/{groupId}`
 
-### 4. Add Member to Group
-```
-POST /groups/{groupId}/members/{userId}
-Authorization: Bearer <token>
+`200`: `GroupDTO`. Errors: `404` no such group; `403 "You are not a member of this group"`.
 
-Response (200 OK):
-{
-  "success": true,
-  "message": "Member added successfully",
-  "statusCode": 200
-}
-```
+#### `POST /api/groups/{groupId}/members/{userId}`
+
+No body. Adds `userId` to the group; adding an existing member is a no-op.
+
+`200 "Member added successfully"`. Errors: `404` group or user unknown; `403` caller not a member.
 
 ---
 
-## Expense Endpoints
+### Expenses
 
-### 1. Create Expense
+`ExpenseDTO`: `{ expenseId, groupId, paidBy: UserDTO, amount, description?, expenseDate, participants: UserDTO[], splits: SplitDTO[], createdAt, updatedAt }`
+`SplitDTO`: `{ splitId, user: UserDTO, amount, splitType }`
+
+#### `POST /api/expenses`
+
+The caller is recorded as the payer.
+
+| Field | Type | Rules |
+|---|---|---|
+| `groupId` | number | required; caller must be a member |
+| `amount` | number | required, ≥ 0.01, at most 2 decimals |
+| `description` | string | optional |
+| `participantIds` | number[] | required, not empty; every ID must be a group member. The payer can be left out |
+| `splitType` | string | optional; only `"EQUAL"` (the default) is accepted |
+
+The amount is split equally; leftover paise go to the participants with the lowest user IDs, so splits always add up to `amount`. Adding an expense recalculates the group's pending settlements and notifies the other members.
+
+```bash
+curl -X POST http://localhost:8088/api/expenses -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"groupId":11,"amount":1000,"description":"Hotel","participantIds":[29,30],"splitType":"EQUAL"}'
 ```
-POST /expenses
-Authorization: Bearer <token>
-Content-Type: application/json
 
-{
-  "groupId": 1,
-  "amount": 300,
-  "description": "Hotel booking",
-  "participantIds": [1, 2, 3],
-  "splitType": "EQUAL"
-}
+`201`
 
-Response (201 Created):
+```json
 {
   "success": true,
   "message": "Expense created successfully",
   "data": {
-    "expenseId": 1,
-    "groupId": 1,
-    "paidBy": {
-      "userId": 1,
-      "name": "John Doe",
-      "email": "john@example.com",
-      "phone": "+91-9876543210",
-      "profilePicture": null
-    },
-    "amount": 300,
-    "description": "Hotel booking",
-    "expenseDate": "2024-01-15T10:35:00",
+    "expenseId": 21,
+    "groupId": 11,
+    "paidBy": { "userId": 29, "name": "Alice", "email": "alice@example.com", "phone": "9876543210" },
+    "amount": 1000,
+    "description": "Hotel",
+    "expenseDate": "2026-10-28T01:02:04.664683",
     "participants": [
-      {
-        "userId": 1,
-        "name": "John Doe",
-        ...
-      },
-      {
-        "userId": 2,
-        "name": "Jane Smith",
-        ...
-      },
-      {
-        "userId": 3,
-        "name": "Mike Johnson",
-        ...
-      }
+      { "userId": 29, "name": "Alice", "email": "alice@example.com", "phone": "9876543210" },
+      { "userId": 30, "name": "Bob", "email": "bob@example.com" }
     ],
     "splits": [
-      {
-        "splitId": 1,
-        "user": { "userId": 1, ... },
-        "amount": 100,
-        "splitType": "EQUAL"
-      },
-      {
-        "splitId": 2,
-        "user": { "userId": 2, ... },
-        "amount": 100,
-        "splitType": "EQUAL"
-      },
-      {
-        "splitId": 3,
-        "user": { "userId": 3, ... },
-        "amount": 100,
-        "splitType": "EQUAL"
-      }
-    ],
-    "createdAt": "2024-01-15T10:35:00",
-    "updatedAt": "2024-01-15T10:35:00"
+      { "splitId": 51, "user": { "userId": 29, "name": "Alice", "email": "alice@example.com", "phone": "9876543210" }, "amount": 500.0, "splitType": "EQUAL" },
+      { "splitId": 52, "user": { "userId": 30, "name": "Bob", "email": "bob@example.com" }, "amount": 500.0, "splitType": "EQUAL" }
+    ]
   },
   "statusCode": 201
 }
 ```
 
-### 2. Get Expense Details
-```
-GET /expenses/{expenseId}
-Authorization: Bearer <token>
+Errors:
 
-Response (200 OK):
-Same as Create Expense response
-```
+| Status | When |
+|---|---|
+| 400 | `Validation failed` (amount, empty `participantIds`, missing `groupId`) |
+| 400 | `Unsupported split type: PERCENTAGE. Only EQUAL is supported` |
+| 400 | `Participant not found with id: …` / `Participant … is not a member of this group` |
+| 403 | Caller isn't a member of the group |
+| 404 | Group doesn't exist |
 
-### 3. Get Group Expenses
-```
-GET /expenses/group/{groupId}
-Authorization: Bearer <token>
+#### `GET /api/expenses/{expenseId}`
 
-Response (200 OK):
-{
-  "success": true,
-  "message": "Group expenses fetched successfully",
-  "data": [
-    { ... expense 1 ... },
-    { ... expense 2 ... }
-  ],
-  "statusCode": 200
-}
-```
+`200`: `ExpenseDTO`. Errors: `404` unknown; `403` caller not in the expense's group.
 
-### 4. Delete Expense
-```
-DELETE /expenses/{expenseId}
-Authorization: Bearer <token>
+#### `GET /api/expenses/group/{groupId}`
 
-Response (200 OK):
-{
-  "success": true,
-  "message": "Expense deleted successfully",
-  "statusCode": 200
-}
-```
+`200`: `ExpenseDTO[]` for the group. Errors: `404` no such group; `403` not a member.
+
+#### `DELETE /api/expenses/{expenseId}`
+
+Deletes the expense and its splits, then recalculates the group's pending settlements.
+
+`200 "Expense deleted successfully"`. Errors: `404` unknown; `403 "Only the person who paid can delete this expense"`.
 
 ---
 
-## Settlement Endpoints
+### Settlements
 
-### 1. Get Pending Settlements
-```
-GET /settlements/group/{groupId}/user/pending
-Authorization: Bearer <token>
+`SettlementDTO`: `{ settlementId, groupId, debtor: UserDTO, creditor: UserDTO, amount, status, createdAt, updatedAt }`. The debtor owes the creditor `amount`; `status` is `PENDING` or `PAID`.
 
-Response (200 OK):
+Pending settlements are regenerated every time an expense is added or deleted, so **settlement IDs change**. Always fetch fresh IDs before paying.
+
+#### `GET /api/settlements/group/{groupId}/user/pending`
+
+`200`: the caller's `PENDING` settlements in the group, both the ones they owe and the ones owed to them.
+
+```json
 {
   "success": true,
   "message": "Pending settlements fetched successfully",
   "data": [
     {
-      "settlementId": 1,
-      "groupId": 1,
-      "debtor": {
-        "userId": 2,
-        "name": "Jane Smith",
-        ...
-      },
-      "creditor": {
-        "userId": 1,
-        "name": "John Doe",
-        ...
-      },
-      "amount": 100,
+      "settlementId": 45,
+      "groupId": 11,
+      "debtor": { "userId": 30, "name": "Bob", "email": "bob@example.com" },
+      "creditor": { "userId": 29, "name": "Alice", "email": "alice@example.com", "phone": "9876543210" },
+      "amount": 500.0,
       "status": "PENDING",
-      "createdAt": "2024-01-15T10:35:00",
-      "updatedAt": "2024-01-15T10:35:00",
-      "settledAt": null
+      "createdAt": "2026-10-28T01:02:04.675806",
+      "updatedAt": "2026-10-28T01:02:04.675812"
     }
   ],
   "statusCode": 200
 }
 ```
 
-### 2. Mark Settlement as Paid
-```
-POST /settlements/{settlementId}/pay
-Authorization: Bearer <token>
+Errors: `404` no such group; `403` not a member.
 
-Response (200 OK):
-{
-  "success": true,
-  "message": "Payment settled successfully",
-  "statusCode": 200
-}
-```
+#### `POST /api/settlements/{settlementId}/pay`
 
-### 3. Get Group Settlement Summary
-```
-GET /settlements/group/{groupId}/summary
-Authorization: Bearer <token>
+No body. Records that the debtor paid the creditor outside the app; nothing else is recalculated. Paid settlements are kept and counted in all later balances.
 
-Response (200 OK):
+`200 "Payment settled successfully"`. Errors: `404` unknown; `403 "Only the debtor or creditor can settle this payment"`; `400 "Settlement is already PAID"`.
+
+#### `GET /api/settlements/group/{groupId}/summary`
+
+`200`: every member's net balance (positive = is owed, negative = owes; they add up to 0), sorted by user ID, plus all `PENDING` settlements in the group.
+
+```json
 {
   "success": true,
   "message": "Group summary fetched successfully",
   "data": {
-    "message": "Group settlement summary",
-    "groupId": 1
+    "groupId": 11,
+    "balances": [
+      { "user": { "userId": 29, "name": "Alice", "email": "alice@example.com", "phone": "9876543210" }, "balance": 500.0 },
+      { "user": { "userId": 30, "name": "Bob", "email": "bob@example.com" }, "balance": -500.0 }
+    ],
+    "settlements": [ { "settlementId": 45, "debtor": { "userId": 30 }, "creditor": { "userId": 29 }, "amount": 500.0, "status": "PENDING" } ]
   },
   "statusCode": 200
 }
 ```
 
----
+(`settlements` entries are full `SettlementDTO`s, shortened here.)
 
-## Error Responses
-
-### 400 Bad Request
-```json
-{
-  "success": false,
-  "message": "Validation failed",
-  "data": {
-    "amount": "Amount must be greater than 0",
-    "participantIds": "Participant IDs are required"
-  },
-  "statusCode": 400
-}
-```
-
-### 401 Unauthorized
-```json
-{
-  "success": false,
-  "message": "Invalid credentials",
-  "statusCode": 401
-}
-```
-
-### 404 Not Found
-```json
-{
-  "success": false,
-  "message": "Group not found with id: 999",
-  "statusCode": 404
-}
-```
-
-### 500 Internal Server Error
-```json
-{
-  "success": false,
-  "message": "An unexpected error occurred",
-  "statusCode": 500
-}
-```
+Errors: `404` no such group; `403` not a member.
 
 ---
 
-## Testing with cURL
+## End-to-end with curl
 
-### Register User
+Alice and Bob split a hotel bill, and Bob settles up. `jq` extracts fields.
+
 ```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "John Doe",
-    "email": "john@example.com",
-    "password": "securePassword123",
-    "phone": "+91-9876543210"
-  }'
+API=http://localhost:8088
+
+A=$(curl -s -X POST $API/api/auth/register -H 'Content-Type: application/json' -d '{"name":"Alice","email":"alice@example.com","password":"secret123"}')
+B=$(curl -s -X POST $API/api/auth/register -H 'Content-Type: application/json' -d '{"name":"Bob","email":"bob@example.com","password":"secret123"}')
+TA=$(echo "$A" | jq -r .data.token); AID=$(echo "$A" | jq .data.userId)
+TB=$(echo "$B" | jq -r .data.token); BID=$(echo "$B" | jq .data.userId)
+
+GID=$(curl -s -X POST $API/api/groups -H "Authorization: Bearer $TA" -H 'Content-Type: application/json' -d "{\"name\":\"Goa trip\",\"memberIds\":[$BID]}" | jq .data.groupId)
+
+curl -s -X POST $API/api/expenses -H "Authorization: Bearer $TA" -H 'Content-Type: application/json' -d "{\"groupId\":$GID,\"amount\":1000,\"description\":\"Hotel\",\"participantIds\":[$AID,$BID]}" | jq '.data.splits[] | {user: .user.name, amount}'
+
+SID=$(curl -s $API/api/settlements/group/$GID/user/pending -H "Authorization: Bearer $TB" | jq '.data[0].settlementId')
+curl -s -X POST $API/api/settlements/$SID/pay -H "Authorization: Bearer $TB" | jq .message
+
+curl -s $API/api/settlements/group/$GID/summary -H "Authorization: Bearer $TA" | jq '.data.balances[] | {user: .user.name, balance}'
 ```
 
-### Login User
-```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "john@example.com",
-    "password": "securePassword123"
-  }'
-```
-
-### Get Profile (with token)
-```bash
-curl -X GET http://localhost:8080/api/users/profile \
-  -H "Authorization: Bearer <your_token_here>"
-```
-
-### Create Group
-```bash
-curl -X POST http://localhost:8080/api/groups \
-  -H "Authorization: Bearer <your_token_here>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Trip to Goa",
-    "description": "Summer vacation",
-    "memberIds": [2, 3]
-  }'
-```
-
-### Create Expense
-```bash
-curl -X POST http://localhost:8080/api/expenses \
-  -H "Authorization: Bearer <your_token_here>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "groupId": 1,
-    "amount": 300,
-    "description": "Hotel booking",
-    "participantIds": [1, 2, 3],
-    "splitType": "EQUAL"
-  }'
-```
-
----
-
-## Response Status Codes
-- `200 OK` - Request successful
-- `201 Created` - Resource created successfully
-- `400 Bad Request` - Invalid input
-- `401 Unauthorized` - Missing/invalid authentication
-- `404 Not Found` - Resource not found
-- `500 Internal Server Error` - Server error
+The final summary shows both balances at `0`: the hotel was split 500 / 500, and Bob's 500 is paid.

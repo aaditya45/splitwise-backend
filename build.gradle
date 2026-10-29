@@ -6,7 +6,9 @@ plugins {
 
 group = 'com.splitwise'
 version = '1.0.0'
-sourceCompatibility = '17'
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+}
 
 configurations {
     compileOnly {
@@ -17,9 +19,7 @@ configurations {
 repositories {
     gradlePluginPortal()
     mavenCentral()
-    maven {
-		url = uri('C:\\Users\\aaditya.sharma\\.m2\\repository')
-	}
+    mavenLocal()
 }
 
 dependencies {

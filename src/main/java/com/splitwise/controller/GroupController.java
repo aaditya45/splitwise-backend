@@ -42,8 +42,11 @@ public class GroupController {
     }
     
     @GetMapping("/{groupId}")
-    public ResponseEntity<ApiResponse<GroupDTO>> getGroup(@PathVariable Long groupId) {
-        Group group = groupService.getGroupById(groupId);
+    public ResponseEntity<ApiResponse<GroupDTO>> getGroup(
+            @PathVariable Long groupId,
+            Authentication authentication) {
+        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+        Group group = groupService.requireMember(groupId, userDetails.getUserId());
         GroupDTO groupDTO = groupService.convertToDTO(group);
         
         ApiResponse<GroupDTO> response = ApiResponse.<GroupDTO>builder()
@@ -77,8 +80,10 @@ public class GroupController {
     @PostMapping("/{groupId}/members/{userId}")
     public ResponseEntity<ApiResponse<String>> addMemberToGroup(
             @PathVariable Long groupId,
-            @PathVariable Long userId) {
-        groupService.addMemberToGroup(groupId, userId);
+            @PathVariable Long userId,
+            Authentication authentication) {
+        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+        groupService.addMemberToGroup(groupId, userId, userDetails.getUserId());
         
         ApiResponse<String> response = ApiResponse.<String>builder()
                 .success(true)

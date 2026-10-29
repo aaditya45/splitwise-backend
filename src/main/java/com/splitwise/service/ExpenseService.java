@@ -3,6 +3,8 @@ package com.splitwise.service;
 import com.splitwise.dto.ExpenseDTO;
 import com.splitwise.dto.ExpenseSplitDTO;
 import com.splitwise.dto.request.CreateExpenseRequest;
+import com.splitwise.exception.ForbiddenException;
+import com.splitwise.exception.NotFoundException;
 import com.splitwise.model.Expense;
 import com.splitwise.model.ExpenseSplit;
 import com.splitwise.model.Group;
@@ -36,15 +38,24 @@ public class ExpenseService {
 
     
     public Expense createExpense(CreateExpenseRequest request, Long paidByUserId) {
-        Group group = groupService.getGroupById(request.groupId());
+        Group group = groupService.requireMember(request.groupId(), paidByUserId);
         User paidBy = userRepository.findById(paidByUserId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
-        // Validate all participants exist
+
+        // Only equal splits are supported: the request carries no percentages or item amounts
+        String splitType = request.splitType() != null ? request.splitType().toUpperCase() : "EQUAL";
+        if (!"EQUAL".equals(splitType)) {
+            throw new RuntimeException("Unsupported split type: " + request.splitType() + ". Only EQUAL is supported");
+        }
+
+        // Validate all participants exist and belong to the group
         Set<User> participants = new HashSet<>();
         for (Long participantId : request.participantIds()) {
             User participant = userRepository.findById(participantId)
                     .orElseThrow(() -> new RuntimeException("Participant not found with id: " + participantId));
+            if (!groupService.isMember(group, participantId)) {
+                throw new RuntimeException("Participant " + participantId + " is not a member of this group");
+            }
             participants.add(participant);
         }
         
@@ -60,7 +71,6 @@ public class ExpenseService {
         Expense savedExpense = expenseRepository.save(expense);
         
         // Calculate and create splits
-        String splitType = request.splitType() != null ? request.splitType() : "EQUAL";
         Map<User, BigDecimal> splits = splitCalculatorService.equalSplit(request.amount(), participants);
         Set<ExpenseSplit> expenseSplits = splitCalculatorService.createSplits(savedExpense, splits, splitType);
         
@@ -97,10 +107,17 @@ public class ExpenseService {
     
     public Expense getExpenseById(Long expenseId) {
         return expenseRepository.findById(expenseId)
-                .orElseThrow(() -> new RuntimeException("Expense not found with id: " + expenseId));
+                .orElseThrow(() -> new NotFoundException("Expense not found with id: " + expenseId));
     }
-    
-    public List<Expense> getGroupExpenses(Long groupId) {
+
+    public Expense getExpenseForMember(Long expenseId, Long userId) {
+        Expense expense = getExpenseById(expenseId);
+        groupService.requireMember(expense.getGroup().getGroupId(), userId);
+        return expense;
+    }
+
+    public List<Expense> getGroupExpenses(Long groupId, Long userId) {
+        groupService.requireMember(groupId, userId);
         return expenseRepository.findByGroupGroupId(groupId);
     }
     
@@ -113,7 +130,7 @@ public class ExpenseService {
         
         // Verify the user paid this expense
         if (!expense.getPaidBy().getUserId().equals(userId)) {
-            throw new RuntimeException("Only the person who paid can delete this expense");
+            throw new ForbiddenException("Only the person who paid can delete this expense");
         }
         
         Group group = expense.getGroup();

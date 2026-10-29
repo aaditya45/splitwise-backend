@@ -20,6 +20,9 @@ databaseChangeLog:
   - include:
       file: db/changelog/P0/ddl/007-create-settlements-table.sql
       relativeToChangelogFile: false
+  - include:
+      file: db/changelog/P0/ddl/008-alter-expense-date-to-timestamp.sql
+      relativeToChangelogFile: false
 #   - include:
 #       file: db/changelog/P0/dml/001-seed-users.sql
 #       relativeToChangelogFile: false

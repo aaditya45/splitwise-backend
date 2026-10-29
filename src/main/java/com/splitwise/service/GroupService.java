@@ -2,6 +2,8 @@ package com.splitwise.service;
 
 import com.splitwise.dto.GroupDTO;
 import com.splitwise.dto.request.CreateGroupRequest;
+import com.splitwise.exception.ForbiddenException;
+import com.splitwise.exception.NotFoundException;
 import com.splitwise.model.Group;
 import com.splitwise.model.User;
 import com.splitwise.repository.GroupRepository;
@@ -51,17 +53,32 @@ public class GroupService {
     public Group getGroupById(Long groupId) {
         // Use custom query that eagerly fetches members
         return groupRepository.findByIdWithMembers(groupId)
-                .orElseThrow(() -> new RuntimeException("Group not found with id: " + groupId));
+                .orElseThrow(() -> new NotFoundException("Group not found with id: " + groupId));
+    }
+
+    /**
+     * Load a group, failing unless the given user is one of its members
+     */
+    public Group requireMember(Long groupId, Long userId) {
+        Group group = getGroupById(groupId);
+        if (!isMember(group, userId)) {
+            throw new ForbiddenException("You are not a member of this group");
+        }
+        return group;
+    }
+
+    public boolean isMember(Group group, Long userId) {
+        return group.getMembers().stream().anyMatch(member -> member.getUserId().equals(userId));
     }
     
     public List<Group> getUserGroups(Long userId) {
         return groupRepository.findGroupsByUserId(userId);
     }
     
-    public void addMemberToGroup(Long groupId, Long userId) {
-        Group group = getGroupById(groupId);
+    public void addMemberToGroup(Long groupId, Long userId, Long requestedByUserId) {
+        Group group = requireMember(groupId, requestedByUserId);
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+                .orElseThrow(() -> new NotFoundException("User not found with id: " + userId));
         
         // Update both sides of the bidirectional relationship
         group.getMembers().add(user);        
